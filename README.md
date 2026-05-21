@@ -20,13 +20,16 @@ zero-dependency; this is the only part that pulls in libvaxis.
 ## Usage
 
 ```sh
-zig build run                                   # a built-in demo index
-zig build run -- --dir <path> --root <hex>      # load a real zigpot index
+zig build run                                    # a built-in demo index
+zig build run -- --bee <url>  --root <hex>       # load from a running Bee node
+zig build run -- --dir <path> --root <hex>       # load a local zigpot store
 ```
 
-`--dir` / `--root` take a local zigpot store directory and a root chunk
-address (the handle printed by `zigpot put`/`del`). Requires a real
-terminal (it opens the tty).
+`--root` is the root chunk address (the handle printed by `zigpot put`/`del`).
+`--bee` reads the chunks from a Bee node over HTTP (read-only — no postage
+batch needed); `--dir` reads them from a local store directory. Add `--dump`
+to print the entries + trie as text instead of opening the TUI. Requires a
+real terminal to run interactively (it opens the tty).
 
 ## Requirements
 

@@ -2,6 +2,7 @@
 //! built on libvaxis.
 //!
 //!   zigpot-tui                              # a built-in demo index
+//!   zigpot-tui --bee <url>  --root <hex>    # load from a running Bee node
 //!   zigpot-tui --dir <path> --root <hex>    # load a real index from disk
 //!
 //! Left pane: the key/value entries (j / k move the selection).
@@ -66,29 +67,43 @@ fn demoIndex(allocator: std.mem.Allocator) !zigpot.Index {
     return idx;
 }
 
-/// Build the index to browse: `--dir <path> --root <hex>` loads from a
-/// local FileStore; otherwise a built-in demo.
+/// Build the index to browse:
+///   --bee <url> --root <hex>   loads from a Bee node (read-only)
+///   --dir <path> --root <hex>  loads from a local FileStore
+/// otherwise a built-in demo.
 fn loadIndex(allocator: std.mem.Allocator, io: std.Io, args: std.process.Args) !zigpot.Index {
     var it = std.process.Args.Iterator.init(args);
     _ = it.next(); // skip the program name
 
     var dir: ?[]const u8 = null;
+    var bee: ?[]const u8 = null;
     var root_hex: ?[]const u8 = null;
     while (it.next()) |arg| {
         if (std.mem.eql(u8, arg, "--dir")) {
             if (it.next()) |v| dir = v;
+        } else if (std.mem.eql(u8, arg, "--bee")) {
+            if (it.next()) |v| bee = v;
         } else if (std.mem.eql(u8, arg, "--root")) {
             if (it.next()) |v| root_hex = v;
         }
     }
 
-    if (dir) |d| if (root_hex) |rh| {
+    // Need a root to load anything; without one, show the demo.
+    const rh = root_hex orelse return demoIndex(allocator);
+    var addr: zigpot.Address = undefined;
+    _ = try std.fmt.hexToBytes(&addr, rh);
+
+    if (bee) |url| {
+        // Read-only: downloads don't need a postage batch.
+        var bs = zigpot.BeeStore.init(io, allocator, url, null);
+        defer bs.deinit();
+        return zigpot.Index.load(allocator, bs.store(), addr, 256);
+    }
+    if (dir) |d| {
         var fs = try zigpot.FileStore.init(io, d);
         defer fs.deinit();
-        var addr: zigpot.Address = undefined;
-        _ = try std.fmt.hexToBytes(&addr, rh);
         return zigpot.Index.load(allocator, fs.store(), addr, 256);
-    };
+    }
     return demoIndex(allocator);
 }
 

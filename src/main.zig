@@ -93,13 +93,15 @@ fn loadIndex(allocator: std.mem.Allocator, io: std.Io, args: std.process.Args) !
 }
 
 /// Render one trie node: indent by depth, label with its branch PO.
-fn formatNode(buf: []u8, node: TreeNode) []const u8 {
+/// Allocates from a per-frame arena, since libvaxis keeps the text slice
+/// alive until render.
+fn formatNode(fa: std.mem.Allocator, node: TreeNode) []const u8 {
     const spaces = "                                ";
     const ind = spaces[0..@min(node.depth * 2, spaces.len)];
     return if (node.po) |po|
-        std.fmt.bufPrint(buf, "{s}+[po {d}] {s}", .{ ind, po, node.key }) catch node.key
+        std.fmt.allocPrint(fa, "{s}+[po {d}] {s}", .{ ind, po, node.key }) catch node.key
     else
-        std.fmt.bufPrint(buf, "{s}* {s}", .{ ind, node.key }) catch node.key;
+        std.fmt.allocPrint(fa, "{s}* {s}", .{ ind, node.key }) catch node.key;
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -117,6 +119,31 @@ pub fn main(init: std.process.Init) !void {
     idx.walkStructure(&tree, TreeCollector.visit);
     const nodes = tree.nodes[0..tree.n];
 
+    // --dump: print entries + trie as text and exit (no terminal needed).
+    {
+        var it = std.process.Args.Iterator.init(init.minimal.args);
+        while (it.next()) |a| {
+            if (std.mem.eql(u8, a, "--dump")) {
+                var dbuf: [4096]u8 = undefined;
+                var dfw = std.Io.File.stdout().writer(io, &dbuf);
+                const w = &dfw.interface;
+                try w.print("entries ({d}):\n", .{rows.len});
+                for (rows) |r| try w.print("  {s} = {s}\n", .{ r.key, r.value });
+                try w.print("\nproximity-order trie ({d} nodes):\n", .{nodes.len});
+                for (nodes) |nd| {
+                    const sp = "                                ";
+                    const ind = sp[0..@min(nd.depth * 2, sp.len)];
+                    if (nd.po) |po|
+                        try w.print("  {s}+[po {d}] {s}\n", .{ ind, po, nd.key })
+                    else
+                        try w.print("  {s}* {s}\n", .{ ind, nd.key });
+                }
+                try w.flush();
+                return;
+            }
+        }
+    }
+
     // --- libvaxis setup (io, gpa, env map all provided by the runtime) ---
     var tty_buf: [8192]u8 = undefined;
     var tty = try vaxis.Tty.init(io, &tty_buf);
@@ -133,6 +160,12 @@ pub fn main(init: std.process.Init) !void {
     try vx.enterAltScreen(writer);
     try vx.queryTerminal(writer, std.Io.Duration.fromSeconds(1));
 
+    // Per-frame scratch: libvaxis keeps each segment's text slice alive
+    // until render, so formatted lines must outlive the draw calls. Reset
+    // (retaining capacity) at the top of every frame.
+    var frame_arena = std.heap.ArenaAllocator.init(allocator);
+    defer frame_arena.deinit();
+
     var selected: usize = 0;
     while (true) {
         const event = try loop.nextEvent();
@@ -144,6 +177,9 @@ pub fn main(init: std.process.Init) !void {
             },
             .winsize => |ws| try vx.resize(allocator, writer, ws),
         }
+
+        _ = frame_arena.reset(.retain_capacity);
+        const fa = frame_arena.allocator();
 
         const win = vx.window();
         win.clear();
@@ -162,8 +198,7 @@ pub fn main(init: std.process.Init) !void {
         // left pane: entries
         _ = left.printSegment(.{ .text = "entries", .style = .{ .bold = true } }, .{ .row_offset = 0 });
         for (rows, 0..) |row, i| {
-            var buf: [256]u8 = undefined;
-            const line = std.fmt.bufPrint(&buf, "{s} = {s}", .{ row.key, row.value }) catch row.key;
+            const line = std.fmt.allocPrint(fa, "{s} = {s}", .{ row.key, row.value }) catch row.key;
             const style: vaxis.Style = if (i == selected) .{ .reverse = true } else .{};
             _ = left.printSegment(.{ .text = line, .style = style }, .{ .row_offset = @intCast(i + 1), .wrap = .none });
         }
@@ -171,8 +206,7 @@ pub fn main(init: std.process.Init) !void {
         // right pane: trie structure
         _ = right.printSegment(.{ .text = "proximity-order trie", .style = .{ .bold = true } }, .{ .row_offset = 0 });
         for (nodes, 0..) |node, i| {
-            var buf: [256]u8 = undefined;
-            const line = formatNode(&buf, node);
+            const line = formatNode(fa, node);
             const style: vaxis.Style = if (std.mem.eql(u8, node.key, sel_key)) .{ .reverse = true } else .{};
             _ = right.printSegment(.{ .text = line, .style = style }, .{ .row_offset = @intCast(i + 1), .wrap = .none });
         }

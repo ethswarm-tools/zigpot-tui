@@ -1,0 +1,22 @@
+.{
+    .name = .zigpot_tui,
+    .version = "0.1.0",
+    .fingerprint = 0x972743e66946ea19, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis#60a507c25b5335e222eb12320aa7514db684d4a4",
+            .hash = "vaxis-0.6.0-BWNV_HHwCQCy33z_jb0RHLjoinqQ8tgQVZI9z2e5Yqdd",
+        },
+        .zigpot = .{
+            .url = "git+https://github.com/ethswarm-tools/zigpot#aa23f485bdd7131167018a2adc968f031a57a7bd",
+            .hash = "zigpot-0.2.0-k6YohFPoAACPVRNEsXktIM7T4S57LjdbRvPSrQygSVNx",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}

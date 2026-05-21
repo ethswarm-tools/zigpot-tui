@@ -234,6 +234,7 @@ pub fn main(init: std.process.Init) !void {
     try vx.queryTerminal(writer, std.Io.Duration.fromSeconds(1));
 
     var selected: usize = 0;
+    var scroll: usize = 0; // index of the first visible row
     while (true) {
         const event = try loop.nextEvent();
         switch (event) {
@@ -241,6 +242,8 @@ pub fn main(init: std.process.Init) !void {
                 if (key.matches('q', .{}) or key.matches(vaxis.Key.escape, .{})) break;
                 if (key.matches('j', .{}) and selected + 1 < rows.len) selected += 1;
                 if (key.matches('k', .{}) and selected > 0) selected -= 1;
+                if (key.matches('g', .{})) selected = 0;
+                if (key.matches('G', .{}) and rows.len > 0) selected = rows.len - 1;
             },
             .winsize => |ws| try vx.resize(allocator, writer, ws),
         }
@@ -248,27 +251,31 @@ pub fn main(init: std.process.Init) !void {
         const win = vx.window();
         win.clear();
 
-        _ = win.printSegment(.{
-            .text = "zigpot-tui — POT browser   (j/k move · q quit)",
-            .style = .{ .bold = true },
-        }, .{ .row_offset = 0 });
+        // Scroll so the selection stays visible. Each pane shows its
+        // height minus the header row; the title takes the top line.
+        const visible: usize = if (win.height > 2) win.height - 2 else 1;
+        if (selected < scroll) scroll = selected;
+        if (selected >= scroll + visible) scroll = selected + 1 - visible;
+        const end = @min(scroll + visible, rows.len);
+
+        var titlebuf: [160]u8 = undefined;
+        const pos = if (rows.len == 0) 0 else selected + 1;
+        const title = std.fmt.bufPrint(&titlebuf, "zigpot-tui — POT browser   [{d}/{d}]   (j/k/g/G move · q quit)", .{ pos, rows.len }) catch "zigpot-tui — POT browser";
+        _ = win.printSegment(.{ .text = title, .style = .{ .bold = true } }, .{ .row_offset = 0 });
 
         const half = win.width / 2;
         const left = win.child(.{ .x_off = 0, .y_off = 1, .width = half, .height = win.height -| 1 });
         const right = win.child(.{ .x_off = @intCast(half), .y_off = 1, .width = win.width -| half, .height = win.height -| 1 });
 
-        // left pane: entries
         _ = left.printSegment(.{ .text = "entries", .style = .{ .bold = true } }, .{ .row_offset = 0 });
-        for (kv_lines, 0..) |line, i| {
-            const style: vaxis.Style = if (i == selected) .{ .reverse = true } else .{};
-            _ = left.printSegment(.{ .text = line, .style = style }, .{ .row_offset = @intCast(i + 1), .wrap = .none });
-        }
-
-        // right pane: trie structure
         _ = right.printSegment(.{ .text = "proximity-order trie", .style = .{ .bold = true } }, .{ .row_offset = 0 });
-        for (tree_lines, 0..) |line, i| {
-            const style: vaxis.Style = if (i == selected) .{ .reverse = true } else .{};
-            _ = right.printSegment(.{ .text = line, .style = style }, .{ .row_offset = @intCast(i + 1), .wrap = .none });
+
+        var r = scroll;
+        while (r < end) : (r += 1) {
+            const style: vaxis.Style = if (r == selected) .{ .reverse = true } else .{};
+            const ro: u16 = @intCast(r - scroll + 1);
+            _ = left.printSegment(.{ .text = kv_lines[r], .style = style }, .{ .row_offset = ro, .wrap = .none });
+            _ = right.printSegment(.{ .text = tree_lines[r], .style = style }, .{ .row_offset = ro, .wrap = .none });
         }
 
         try vx.render(writer);

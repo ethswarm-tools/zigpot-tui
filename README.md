@@ -10,11 +10,13 @@ zero-dependency; this is the only part that pulls in libvaxis.
 
 ## What it shows
 
-- **Left pane** — the key/value entries; `j` / `k` move the selection.
-- **Right pane** — the POT *structure*: each node indented by tree depth
-  and labelled with the proximity order it branches at (`[po N]`). The
-  node holding the selected key is highlighted, so you can see where any
-  key sits in the trie.
+- **Left pane** — the key/value entries; `j` / `k` move the selection,
+  `g` / `G` jump to top / bottom, and the view scrolls for stores taller
+  than the screen. The title shows the position (`[i/n]`).
+- **Right pane** — the POT *structure* drawn as a tree with branch glyphs
+  (`├─ │ └─`); each node is labelled with the proximity order it branches
+  at (`[po N]`). The node holding the selected key is highlighted, so you
+  can see where any key sits in the trie.
 - `q` / `Esc` quits.
 
 ## Usage
